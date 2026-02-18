@@ -1,3 +1,8 @@
+fastapi
+uvicorn
+torch
+torchvision
+Pillow
 torch
 torchvision
 pandas
@@ -5,3 +10,4 @@ scikit-learn
 matplotlib
 pillow
 numpy
+python-multipart

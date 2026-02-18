@@ -1,8 +1,8 @@
 # Tick Classification Project
 
-A deep learning project to classify different species and genders of ticks using PyTorch and Transfer Learning.
+A deep learning project to classify different species and genders of ticks using PyTorch, Transfer Learning, and a FastAPI inference server.
 
-## 🛠️ Setup and Installation
+## 🛠️ Setup and Installation (Model + Server)
 
 1.  **Clone the repository** (or navigate to the project folder).
 2.  **Create a virtual environment**:
@@ -13,9 +13,9 @@ A deep learning project to classify different species and genders of ticks using
     ```powershell
     .\venv\Scripts\Activate.ps1
     ```
-4.  **Install dependencies**:
+4.  **Install dependencies** (from `requirements.txt`):
     ```powershell
-    pip install torch torchvision torchaudio pandas scikit-learn matplotlib seaborn pillow
+    pip install -r requirements.txt
     ```
 
 ## 🧠 Model Architecture
@@ -58,9 +58,49 @@ python evaluate.py
 ```
 
 ### 4. Inference
-To predict a single image, use the Jupyter Notebook:
+
+#### Option A: Jupyter Notebook (manual)
 -   Open `inference.ipynb`
 -   Point `sample_image` to your image path and run all cells.
+
+#### Option B: FastAPI Inference Server (recommended)
+1. Ensure `tick_model.pth` is present in the project root (same folder as `api_server.py`).
+2. With the virtual environment activated, start the API server:
+    ```powershell
+    uvicorn api_server:app --host 0.0.0.0 --port 8000
+    ```
+    or:
+    ```powershell
+    python api_server.py
+    ```
+3. Open the interactive docs in your browser at `http://localhost:8000/docs` to test endpoints.
+
+#### Available Endpoints
+-   `GET /health`  
+    - **Description**: Simple health check, returns `{"status": "ok"}`.
+-   `POST /predict`  
+    - **Input**: `multipart/form-data` with an image file under field name `file`.
+    - **Output (JSON)**:
+        ```json
+        {
+          "label": "rhipicephalus_female",
+          "confidence": 95.17
+        }
+        ```
+-   `POST /predict_path`  
+    - **Input (JSON)**:
+        ```json
+        {
+          "image_path": "D:\\\\path\\\\to\\\\your\\\\image.jpg"
+        }
+        ```
+    - **Output (JSON)**: a list of two strings `[label, confidence]`, e.g.:
+        ```json
+        [
+          "rhipicephalus_female",
+          "95.17"
+        ]
+        ```
 
 ## 📂 Project Structure
 -   `model.py`: Architecture definition.
@@ -69,3 +109,4 @@ To predict a single image, use the Jupyter Notebook:
 -   `evaluate.py`: Performance metrics and confusion matrix generation.
 -   `inference.ipynb`: Simple pipeline for single-image prediction.
 -   `generate_metadata.py`: Helper script to organize dataset paths.
+-   `api_server.py`: FastAPI application exposing model inference endpoints.
