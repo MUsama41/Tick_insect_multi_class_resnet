@@ -1,11 +1,13 @@
 from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 import torch
 from torchvision import transforms
 from PIL import Image
 import io
 import os
+import base64
 
 from model import get_model
 
@@ -22,6 +24,10 @@ class PredictionResponse(BaseModel):
 
 class PathRequest(BaseModel):
     image_path: str
+
+
+class Base64Request(BaseModel):
+    image_base64: str
 
 
 app = FastAPI(
@@ -106,7 +112,30 @@ async def predict(file: UploadFile = File(...)):
         raise HTTPException(status_code=500, detail=f"Inference failed: {str(e)}")
 
 
-@app.post("/predict_path", response_model=list[str])
+@app.post("/predict_base64")
+async def predict_base64(payload: Base64Request):
+    """
+    Accept a base64-encoded image string and return [label, confidence_as_string].
+    
+    - **image_base64**: Base64 encoded image string (can include 'data:image/...;base64,' prefix or just the base64 string)
+    """
+    try:
+        # Remove data URL prefix if present (e.g., "data:image/jpeg;base64,")
+        base64_string = payload.image_base64
+        if ',' in base64_string:
+            base64_string = base64_string.split(',')[1]
+        
+        # Decode base64 to bytes
+        image_bytes = base64.b64decode(base64_string)
+        label, confidence = predict_image_bytes(image_bytes)
+        
+        # Return as list of strings: [label, confidence]
+        return JSONResponse(content=[label, f"{confidence:.2f}"])
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Inference failed: {str(e)}")
+
+
+@app.post("/predict_path")
 def predict_from_path(payload: PathRequest):
     """
     Accept an absolute image path on the server, load the image, and return [label, confidence_as_string].
@@ -129,7 +158,7 @@ def predict_from_path(payload: PathRequest):
         score = confidence.item() * 100.0
 
         # Return as list of strings: [label, confidence]
-        return [label, f"{score:.2f}"]
+        return JSONResponse(content=[label, f"{score:.2f}"])
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Inference from path failed: {str(e)}")
 
@@ -144,5 +173,3 @@ if __name__ == "__main__":
         port=8000,
         reload=False,
     )
-
-
