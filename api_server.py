@@ -1,6 +1,5 @@
-from fastapi import FastAPI, UploadFile, File, HTTPException, Body
+from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
 import torch
 from torchvision import transforms
 from PIL import Image
@@ -10,10 +9,6 @@ import base64
 from typing import List
 
 from model import get_model
-
-
-class PredictionListResponse(BaseModel):
-    predictions: List[str]
 
 
 CLASSES = ['hyalomma_female', 'hyalomma_male', 'rhipicephalus_female', 'rhipicephalus_male']
@@ -91,13 +86,11 @@ def predict_image_bytes(image_bytes: bytes):
         with torch.no_grad():
             outputs = model(input_tensor)
             probabilities = torch.nn.functional.softmax(outputs[0], dim=0)
-            confidences, indices = torch.sort(probabilities, descending=True)
+            confidence, predicted_idx = torch.max(probabilities, 0)
 
-        # Ordered list of class labels by confidence (highest first)
-        ordered_labels = [CLASSES[idx.item()] for idx in indices]
-        top_confidence = confidences[0].item() * 100.0
-
-        return ordered_labels, top_confidence
+        label = CLASSES[predicted_idx.item()]
+        confidence_str = f"{confidence.item() * 100.0:.2f}"
+        return label, confidence_str
     except Exception as e:
         prefix = image_bytes[:20].hex() if image_bytes else "None"
         # Determine likely format based on prefix
@@ -108,52 +101,47 @@ def predict_image_bytes(image_bytes: bytes):
 
 
 
-@app.post("/predict_single", response_model=PredictionListResponse)
+@app.post("/predict_single", response_model=List[str])
 async def predict_single(file: bytes = File(...)):
     """
-    Accepts a single image file (binary) and returns a PredictionResponse.
-    
-    - **file**: The raw binary image data.
+    Accepts a single image (binary), runs inference, returns [specie_gender, confidence].
     """
     try:
-        labels, _ = predict_image_bytes(file)
-        return PredictionListResponse(predictions=labels)
+        label, confidence = predict_image_bytes(file)
+        return [label, confidence]
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Inference failed: {str(e)}")
 
 
-@app.post("/predict_multi", response_model=PredictionListResponse)
+@app.post("/predict_multi", response_model=List[str])
 async def predict_multi(files: List[UploadFile] = File(...)):
     """
-    Accepts up to 3 image files (binary), performs inference on each, and returns the one with the highest confidence.
-    
-    - **files**: A list of up to 3 image files.
+    Accepts up to 3 images (binary), runs inference on each, returns [specie_gender, confidence] for the one with highest confidence.
     """
     if len(files) > 3:
         raise HTTPException(status_code=400, detail="Maximum 3 images allowed")
     if not files:
         raise HTTPException(status_code=400, detail="No images provided")
 
-    predictions = []
+    results = []
     errors = []
-    for i, file in enumerate(files):
+    for file in files:
         try:
             content = await file.read()
-            labels, confidence = predict_image_bytes(content)
-            predictions.append((labels, confidence))
+            label, confidence = predict_image_bytes(content)
+            results.append((label, confidence, float(confidence)))
         except Exception as e:
             errors.append(f"Image {file.filename} failed: {str(e)}")
             continue
 
-    if not predictions:
+    if not results:
         error_details = "; ".join(errors)
         raise HTTPException(status_code=400, detail=f"Inference failed for all provided images. Errors: {error_details}")
 
-    # Return the predictions for the image with the highest top-1 confidence
-    best_labels, _ = max(predictions, key=lambda x: x[1])
-    return PredictionListResponse(predictions=best_labels)
+    best = max(results, key=lambda x: x[2])
+    return [best[0], best[1]]
 
 
 if __name__ == "__main__":
